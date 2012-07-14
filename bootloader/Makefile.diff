@@ -1,0 +1,11 @@
+--- Makefile	2012-05-13 11:46:28.000000000 +0200
++++ Makefile.new	2012-07-03 11:13:02.025972446 +0200
+@@ -23,7 +23,7 @@
+ FUSEOPT = $(FUSEOPT_t85)
+ LOCKOPT = -U lock:w:0x2f:m
+ 
+-PROGRAMMER = -c USBasp
++PROGRAMMER = -c usbtiny
+ # PROGRAMMER contains AVRDUDE options to address your programmer
+ 
+ FUSEOPT_8 = -U hfuse:w:0xc0:m -U lfuse:w:0x9f:m

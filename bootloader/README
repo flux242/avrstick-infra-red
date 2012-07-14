@@ -1,0 +1,8 @@
+1. Download newest bootloader firmware version from 
+   http://embedded-creations.com/projects/attiny85-usb-bootloader-overview/attiny85-usb-bootloader-downloads/
+2. Extract content of the firmware folder
+3. Apply patches
+   patch bootloaderconfig.h < bootloaderconfig.h.diff
+   # the patch below adds usbtiny programmer
+   patch Makefile < Makefile.new 
+4. make
