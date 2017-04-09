@@ -3,7 +3,7 @@
 #include "lookup.h"
 #include "hidkeycodes.h"
 
-unsigned char lookupTable[LTSIZE] PROGMEM = {
+const unsigned char lookupTable[LTSIZE] PROGMEM = {
 KEY_0,     /*0*/
 KEY_1,     /*1*/
 KEY_2,     /*2*/

@@ -6,6 +6,6 @@
 ****************************************************************************/
 
 #define LTSIZE 64
-extern unsigned char lookupTable[LTSIZE];
+extern const unsigned char lookupTable[LTSIZE];
 
 #endif
