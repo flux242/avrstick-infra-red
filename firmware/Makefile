@@ -63,9 +63,12 @@ fuse:
 readcal:
 	$(AVRDUDE) -U calibration:r:/dev/stdout:i | head -1
 
+flash_mn: main.hex
+	micronucleus --run --dump-progress --type intel-hex main.hex
+
 
 clean:
-	rm -f main.hex main.lst main.obj main.cof main.list main.map main.eep.hex main.bin *.o usbdrv/*.o main.s usbdrv/oddebug.s usbdrv/usbdrv.s
+	rm -f *.hex main.lst main.obj main.cof main.list main.map main.eep.hex main.bin *.o usbdrv/*.o main.s usbdrv/oddebug.s usbdrv/usbdrv.s
 
 # file targets:
 main.bin:	$(OBJECTS)

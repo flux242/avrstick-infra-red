@@ -31,11 +31,14 @@ PB3 = White LED output
 PB4 = Digital input (ADC2)
 */
 
-#ifndef NODECODE
-#define DECODE       // comment this out to log instead
+#if defined DECODE_NEC       // comment this out to log instead
+#elif defined DECODE_PHILIPS       // comment this out to log instead
+#else
+#define NODECODE
 #endif
+
 #define START_LEN 29 // start bit length. Recording is started after start bit
-#define MIN_LEN   9  // min length of a pulse. If less then recording is stopped 
+#define MIN_LEN   5  // min length of a pulse. If less then recording is stopped
 
 #define WHITE_LED 3
 #define YELLOW_LED 1
@@ -47,16 +50,18 @@ PB4 = Digital input (ADC2)
 #define NULL    ((void *)0)
 #endif
 
+
+extern const unsigned char lookupTable[] PROGMEM;
 /* ------------------------------------------------------------------------- */
 
 static uchar    reportBuffer[2];    /* buffer for HID reports */
 static uchar    idleRate;           /* in 4 ms units */
 
-static uchar    valueBuffer[16];
+static uchar    valueBuffer[32];
 static uchar    *nextDigit;
 
 
-#define RBSIZE   100
+#define RBSIZE   128
 static  uchar    rbuff[RBSIZE];              // record buffer
 volatile static  uchar    rbidx;
 volatile static  uchar    rbcur;
@@ -113,7 +118,7 @@ PROGMEM const char usbHidReportDescriptor[USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] 
     )
 #endif
 
-#ifdef DECODE
+#ifdef DECODE_PHILIPS
 #define SS  10
 #define SF  17
 #define LS  23
@@ -158,16 +163,49 @@ static uchar decodeBuffer()
   else
     return result;
 }
+#elif defined DECODE_NEC
+#define GET_NEC_BIT(x,y)  ( (y>145)?1:0 )
+static void report_hex_u32(const uint32_t value); //forward decl
+
+static uchar decodeBuffer()
+{
+  uchar idx = 0;
+  uchar result = 0;
+
+  if (rbidx!=68) {
+    return 0;
+  }
+  while(idx<rbidx)
+  {
+    if (rbuff[idx++]<170)
+    { // the preamble found
+      break;
+    }
+  }
+  if (idx<rbidx)
+  {
+    uint32_t command = 0;
+    uint8_t bitCounter = 32;
+    while(bitCounter > 0)
+    {
+      command <<= 1;
+      command += GET_NEC_BIT(rbuff[idx], rbuff[idx+1]);
+      idx+=2;
+      bitCounter--;
+    }
+    if ( 0xb0eb0000 == (command & 0xffff0000))
+    {
+      result = (command >> 8) & 0xff;
+      result += 128; // set the first bit for the '0' key press
+    }
+    //report_hex_u32(command);
+  }
+  return result;
+}
 #endif
 
-static void buildReport(void)
+static void buildReport(const uint8_t key)
 {
-  uchar   key = 0;
-
-  if(nextDigit != NULL)
-  {
-    key = *nextDigit;
-  }
   reportBuffer[0] = 0;    /* no modifiers */
   reportBuffer[1] = key;
 }
@@ -178,7 +216,7 @@ static void reportChar(uchar value, uchar decimate)
   uchar   digit;
  
   //The Buffer is constructed 'backwards'
-  nextDigit = &valueBuffer[sizeof(valueBuffer)];  
+  nextDigit = &valueBuffer[sizeof(valueBuffer)];
   *--nextDigit = 0xff;/* terminate with 0xff */
   if (!decimate)
   {
@@ -188,7 +226,7 @@ static void reportChar(uchar value, uchar decimate)
   else
   {
     *--nextDigit = 0;
-    *--nextDigit = KEY_RETURN;  
+    *--nextDigit = KEY_RETURN;
 
     // Convert char to ASCII.
     do
@@ -202,6 +240,40 @@ static void reportChar(uchar value, uchar decimate)
           *--nextDigit = KEY_1 - 1 + digit;
     } while(value != 0);
   }
+
+  *--nextDigit = 0; // bugfix for the first char been eaten
+  *--nextDigit = 0;
+}
+
+static void print_hex_nibble(const uint8_t digit)
+{
+  if(digit == 0)
+      *--nextDigit = KEY_0;
+  else if (digit < 10)
+      *--nextDigit = KEY_1 + digit - 1;
+  else
+      *--nextDigit = KEY_A + digit - 10;
+}
+static void print_hex_u8(uint8_t value)
+{
+  *--nextDigit = 0;
+  print_hex_nibble(value & 0x0f);
+  *--nextDigit = 0;
+  print_hex_nibble( (value & 0xf0) >> 4);
+}
+
+static void report_hex_u32(const uint32_t value)
+{
+  nextDigit = &valueBuffer[sizeof(valueBuffer)];
+  *--nextDigit = 0xff;/* terminate with 0xff */
+
+  *--nextDigit = 0;
+  *--nextDigit = KEY_RETURN;
+
+  print_hex_u8( (value & 0x000000ff) >> 0);
+  print_hex_u8( (value & 0x0000ff00) >> 8);
+  print_hex_u8( (value & 0x00ff0000) >> 16);
+  print_hex_u8( (value & 0xff000000) >> 24);
 
   *--nextDigit = 0; // bugfix for the first char been eaten
   *--nextDigit = 0;
@@ -222,7 +294,7 @@ uchar usbFunctionSetup(uchar data[8])
   {    /* class request type */
       if(rq->bRequest == USBRQ_HID_GET_REPORT){  /* wValue: ReportType (highbyte), ReportID (lowbyte) */
           /* we only have one report type, so don't look at wValue */
-          buildReport();
+          buildReport(0);
           return sizeof(reportBuffer);
       }else if(rq->bRequest == USBRQ_HID_GET_IDLE){
           usbMsgPtr = &idleRate;
@@ -342,6 +414,7 @@ ISR(TIM1_OVF_vect)
   timerStop();
   if (isRecording)  
   {
+    rbuff[++rbidx] = 0;  // 0 to denote new sequence
     isRecording = 0;
     isRecBufBusy = 1;
     rbcur = 0;
@@ -441,23 +514,30 @@ int main(void)
     usbPoll();  //Check to see if it's time to send a USB packet
     if (isRecBufBusy && nextDigit==NULL)
     {
-#ifndef DECODE
+#ifdef NODECODE
       if (rbcur>rbidx)
         isRecBufBusy = 0; 
       else 
         reportChar(rbuff[rbcur++], 1);
 #else
+#ifdef DECODE_PHILIPS
+  #define CMD_REPEAT_COUNTER      3
+  #define LOOKUP_TABLE_MASK       0b00111111
+#elif defined DECODE_NEC
+  #define CMD_REPEAT_COUNTER      1
+  #define LOOKUP_TABLE_MASK       0b01111111
+#endif
       uchar command;
       command = decodeBuffer();
       if (0!=command)
       {
         if (command!=cmdPrev)
         {
-          reportChar(pgm_read_byte(&lookupTable[command & 0b00111111]), 0); // 64 values maximum
+          reportChar(pgm_read_byte(&lookupTable[command & LOOKUP_TABLE_MASK]), 0);
           cmdPrev = command;
           cmdCounter = 1;
         }
-        else if (++cmdCounter==3)
+        if (++cmdCounter>CMD_REPEAT_COUNTER)
         {
           cmdCounter = 0;
           cmdPrev = 0;
@@ -468,7 +548,7 @@ int main(void)
     }
     if(usbInterruptIsReady() && nextDigit!=NULL)
     { /* we can send another key */
-      buildReport();  //Get the next 'key press' to send to the host. 
+      buildReport(*nextDigit);  //Get the next 'key press' to send to the host.
       usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
       if(*++nextDigit == 0xff)    /* this was terminator character */
         nextDigit = NULL;
