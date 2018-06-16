@@ -1,8 +1,5 @@
-1. Download newest bootloader firmware version from 
-   http://embedded-creations.com/projects/attiny85-usb-bootloader-overview/attiny85-usb-bootloader-downloads/
-2. Extract content of the firmware folder
-3. Apply patches
-   patch bootloaderconfig.h < bootloaderconfig.h.diff
-   # the patch below adds usbtiny programmer
-   patch Makefile < Makefile.new 
-4. make
+1. Clone newest micronucleus bootloader firmware version from
+   https://github.com/micronucleus/micronucleus
+2. Copy t85_avrstick/ to the micronucleus/firmware/configuration/
+3. Patch micronucleus/firmware/Makefile with the Makefile.micronucleos.diff
+4. make and flash micronucleus
